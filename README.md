@@ -17,4 +17,4 @@ Space - Spawn 100 Objects
 3rd run the game
 
 # Upcoming-Game
-I'm making a shape macthing puzzle game similair to this one
+I'm making a shape macthing puzzle game similar to this one
