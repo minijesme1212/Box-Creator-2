@@ -1,0 +1,218 @@
+
+import pygame
+import random
+import math
+
+pygame.init()
+
+# Screen setup
+WIDTH, HEIGHT = 800, 600
+screen = pygame.display.set_mode((WIDTH, HEIGHT), pygame.RESIZABLE)
+pygame.display.set_caption("Box Creator 2")
+clock = pygame.time.Clock()
+
+# Colors
+WHITE = (255, 255, 255)
+BLACK = (0, 0, 0)
+BUTTON_COLOR = (180, 180, 180)
+BUTTON_HOVER_COLOR = (150, 150, 150)
+SHAPE_COLORS = [(200, 50, 50), (50, 200, 50), (50, 50, 200), (200, 200, 0)]
+
+# Shape types
+SHAPE_TYPES = ['box', 'circle', 'triangle']
+
+# Physics settings
+GRAVITY = pygame.Vector2(0, 0.5)
+AIR_FRICTION = 0.98
+GROUND_FRICTION = 0.8
+BOUNCE = -0.6
+VELOCITY_THRESHOLD = 0.5
+ANGULAR_THRESHOLD = 0.1
+
+# Font setup
+font = pygame.font.SysFont(None, 30)
+
+# Retry button setup
+button_rect = pygame.Rect(10, 10, 100, 40)
+
+# Shape class
+class Shape:
+    def __init__(self, x, y):
+        self.type = random.choice(SHAPE_TYPES)
+        self.color = random.choice(SHAPE_COLORS)
+        self.size = random.randint(20, 80)  # ✅ Random size between 20 and 80
+        self.rect = pygame.Rect(x, y, self.size, self.size)
+        self.vel = pygame.Vector2(0, 0)
+        self.angle = 0
+        self.angular_velocity = 0
+
+    def update(self, all_shapes):
+        self.vel += GRAVITY
+
+        # Friction
+        if self.rect.bottom >= screen.get_height():
+            self.vel.x *= GROUND_FRICTION
+            self.angular_velocity *= 0.9
+        else:
+            self.vel.x *= AIR_FRICTION
+            self.angular_velocity *= 0.98
+
+        # Stop small velocities
+        if abs(self.vel.x) < VELOCITY_THRESHOLD:
+            self.vel.x = 0
+        if abs(self.vel.y) < VELOCITY_THRESHOLD and self.rect.bottom >= screen.get_height():
+            self.vel.y = 0
+        if abs(self.angular_velocity) < ANGULAR_THRESHOLD:
+            self.angular_velocity = 0
+
+        # Move and rotate
+        self.rect.x += int(self.vel.x)
+        self.rect.y += int(self.vel.y)
+        self.angular_velocity += self.vel.x * 0.1
+        self.angle += self.angular_velocity
+        self.angle %= 360  # ✅ Keep angle bounded
+
+        # Collisions with other shapes
+        for other in all_shapes:
+            if other is not self and self.rect.colliderect(other.rect):
+                direction = pygame.Vector2(self.rect.center) - pygame.Vector2(other.rect.center)
+                if direction.length() == 0:
+                    direction = pygame.Vector2(random.uniform(-1, 1), random.uniform(-1, 1))
+                direction = direction.normalize()
+                self.vel += direction * 2
+                other.vel -= direction * 2
+                self.angular_velocity += random.uniform(-2, 2)
+                other.angular_velocity += random.uniform(-2, 2)
+
+        # Bounce off edges
+        if self.rect.left < 0:
+            self.rect.left = 0
+            self.vel.x *= -1
+            self.angular_velocity *= -1
+        elif self.rect.right > screen.get_width():
+            self.rect.right = screen.get_width()
+            self.vel.x *= -1
+            self.angular_velocity *= -1
+
+        if self.rect.top < 0:
+            self.rect.top = 0
+            self.vel.y *= -1
+
+        # Ground bounce
+        if self.rect.bottom >= screen.get_height():
+            self.rect.bottom = screen.get_height()
+            self.vel.y *= BOUNCE
+            if abs(self.vel.y) < VELOCITY_THRESHOLD:
+                self.vel.y = 0
+
+        # Clamp to screen
+        self.rect.clamp_ip(screen.get_rect())
+
+    def draw(self, surf):
+        if self.type == 'circle':
+            pygame.draw.circle(surf, self.color, self.rect.center, self.size // 2)  # ✅ Use self.size
+
+        elif self.type == 'box':
+            rotated_surf = pygame.Surface(self.rect.size, pygame.SRCALPHA)
+            pygame.draw.rect(rotated_surf, self.color, rotated_surf.get_rect())
+            rotated_surf = pygame.transform.rotate(rotated_surf, self.angle)
+            new_rect = rotated_surf.get_rect(center=self.rect.center)
+            surf.blit(rotated_surf, new_rect.topleft)
+
+        elif self.type == 'triangle':
+            points = self.get_rotated_triangle_points()
+            pygame.draw.polygon(surf, self.color, points)
+
+    def get_rotated_triangle_points(self):
+        cx, cy = self.rect.center
+        size = self.size  # ✅ Use self.size
+        angle_rad = math.radians(self.angle)
+
+        points = [
+            pygame.Vector2(0, -size / 2),
+            pygame.Vector2(-size / 2, size / 2),
+            pygame.Vector2(size / 2, size / 2)
+        ]
+
+        rotated_points = []
+        for point in points:
+            rotated = pygame.Vector2(
+                point.x * math.cos(angle_rad) - point.y * math.sin(angle_rad),
+                point.x * math.sin(angle_rad) + point.y * math.cos(angle_rad)
+            )
+            rotated += pygame.Vector2(cx, cy)
+            rotated_points.append(rotated)
+
+        return rotated_points
+
+# Game state
+shapes = []
+fullscreen = False
+
+def draw_retry_button(surface):
+    mouse_pos = pygame.mouse.get_pos()
+    hovering = button_rect.collidepoint(mouse_pos)
+    color = BUTTON_HOVER_COLOR if hovering else BUTTON_COLOR
+    pygame.draw.rect(surface, color, button_rect)
+    text = font.render("Retry", True, BLACK)
+    surface.blit(text, (button_rect.x + 20, button_rect.y + 10))
+
+def draw_object_count(surface, count):
+    text = font.render(f"Objects: {count}", True, BLACK)
+    text_rect = text.get_rect(topright=(surface.get_width() - 10, 10))
+    surface.blit(text, text_rect)
+
+# Main loop
+running = True
+while running:
+    screen.fill(WHITE)
+
+    for event in pygame.event.get():
+        if event.type == pygame.QUIT:
+            running = False
+
+        elif event.type == pygame.KEYDOWN:
+            if event.key == pygame.K_F11:
+                fullscreen = not fullscreen
+                if fullscreen:
+                    screen = pygame.display.set_mode((0, 0), pygame.FULLSCREEN)
+                else:
+                    screen = pygame.display.set_mode((WIDTH, HEIGHT), pygame.RESIZABLE)
+
+            elif event.key == pygame.K_SPACE:
+                mouse_x, mouse_y = pygame.mouse.get_pos()
+                for _ in range(100):
+                    shapes.append(Shape(mouse_x - 20, mouse_y - 20))
+
+        elif event.type == pygame.MOUSEBUTTONDOWN:
+            if event.button == 3:  # Right-click
+                if not button_rect.collidepoint(event.pos):
+                    x, y = event.pos
+                    shapes.append(Shape(x - 20, y - 20))
+
+            elif event.button == 1:  # Left-click
+                if button_rect.collidepoint(event.pos):
+                    shapes.clear()
+                else:
+                    click_pos = pygame.Vector2(event.pos)
+                    for shape in shapes:
+                        if shape.rect.collidepoint(event.pos):
+                            shape_center = pygame.Vector2(shape.rect.center)
+                            direction = shape_center - click_pos
+                            if direction.length() != 0:
+                                direction = direction.normalize() * 10
+                                shape.vel += direction
+                                shape.angular_velocity += random.uniform(-5, 5)
+
+    # Update and draw shapes
+    for shape in shapes:
+        shape.update(shapes)
+        shape.draw(screen)
+
+    draw_retry_button(screen)
+    draw_object_count(screen, len(shapes))
+
+    pygame.display.flip()
+    clock.tick(60)
+
+pygame.quit()
